@@ -1,0 +1,16 @@
+{
+  "name": "모닝머니북클럽 MMBC",
+  "short_name": "MMBC",
+  "description": "Morning Money Book Club 모임 참여·모집·보증금 관리",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#06352B",
+  "theme_color": "#06352B",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
