@@ -1,9 +1,11 @@
 // 실제 운영용 저장소: Supabase (무료 요금제) 사용
-// 닉네임으로 로그인하기 위해, 닉네임에서 만든 가짜 이메일을 내부적으로만 씁니다. (실제 이메일 수집 없음)
+// 닉네임으로 로그인하기 위해, 닉네임에서 만든 가짜 이메일을 내부적으로만 씁니다. (실제 이메일 수집 없음, 메일 발송 없음)
+// Supabase는 가입 때 이메일 도메인이 실제로 존재하는지 확인하므로, 이 사이트 주소를 도메인으로 씁니다.
+// 주의: 이미 가입한 회원이 있으면 이 값을 바꾸면 안 됩니다(로그인이 안 됨).
 async function nickToEmail(nickname) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nickname.trim()));
   const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
-  return `m${hex}@members.mmbc.club`;
+  return `m${hex}@mmbc-app.vercel.app`;
 }
 function loadScript(src) {
   return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Supabase 라이브러리를 불러오지 못했습니다')); document.head.appendChild(s); });
