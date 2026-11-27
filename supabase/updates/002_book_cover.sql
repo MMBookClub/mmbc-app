@@ -26,4 +26,5 @@ $$;
 grant execute on function public.list_gatherings() to anon, authenticated;
 
 insert into storage.buckets (id, name, public) values ('covers', 'covers', true) on conflict (id) do nothing;
+drop policy if exists "covers: members upload" on storage.objects;
 create policy "covers: members upload" on storage.objects for insert to authenticated with check (bucket_id = 'covers' and public.my_role() in ('leader','admin'));

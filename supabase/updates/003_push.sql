@@ -10,6 +10,7 @@ create table if not exists public.push_subscriptions (
   created_at timestamptz not null default now()
 );
 alter table public.push_subscriptions enable row level security;
+drop policy if exists "push: own read" on public.push_subscriptions;
 create policy "push: own read" on public.push_subscriptions for select to authenticated using (user_id = auth.uid());
 
 -- 같은 알림을 두 번 보내지 않기 위한 기록 (서버만 사용)
