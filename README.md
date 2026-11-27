@@ -12,7 +12,7 @@
 
 ### 1. Supabase 만들기 (데이터 저장소)
 1. https://supabase.com 에서 GitHub 또는 구글 계정으로 가입 → **New project** (지역: Northeast Asia (Seoul))
-2. 왼쪽 **SQL Editor** → `supabase/schema.sql` 내용을 전부 붙여넣고 **Run**
+2. 왼쪽 **SQL Editor** → `supabase/schema.sql` 내용을 전부 붙여넣고 **Run** (새로 설치할 때만. 이미 설치했다면 `supabase/updates/` 안의 파일만 순서대로 실행)
 3. **Authentication → Sign In / Providers → Email**에서 **Confirm email**을 끄기
    (닉네임으로만 가입하기 때문에 이메일 확인 단계가 없어야 합니다)
 4. **Project Settings → API**에서 `Project URL`과 `anon public` 키를 복사해 `config.js`에 붙여넣기

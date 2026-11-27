@@ -6,9 +6,10 @@ window.MMBC_CONFIG = {
 
   // 홈 화면 링크 (비워두면 "준비중"으로 표시)
   links: {
-    instagram: '',
-    threads: '',
-    kakaoOpenChat: '',
+    instagram: 'https://www.instagram.com/m.m.bookclub/',
+    threads: 'https://www.threads.com/@m.m.bookclub',
+    kakaoOpenChat: 'https://open.kakao.com/o/gvvh4uzh',
+    clubOwner: '',   // "클럽장이 생각하는 곳" 버튼 주소
   },
 
   // 잔여 보증금 기부처

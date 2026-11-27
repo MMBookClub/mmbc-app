@@ -72,6 +72,7 @@ create table public.gatherings (
   account_holder text,
   deposit int not null default 20000,
   book_cost int not null default 0,
+  cover_url text,                    -- 책 사진 주소
   status text not null default 'open' check (status in ('open','closed')),
   created_at timestamptz not null default now()
 );
@@ -175,7 +176,7 @@ create or replace function public.list_gatherings()
 returns table (id uuid, kind text, category text, title text, inviter text, description text,
   leader_id uuid, leader_nickname text, capacity int, location text, s1_at timestamptz, s2_at timestamptz,
   bank text, account_no text, account_holder text, deposit int, book_cost int, status text, created_at timestamptz,
-  confirmed_count bigint, pending_count bigint, my_status text)
+  confirmed_count bigint, pending_count bigint, my_status text, cover_url text)
 language sql stable security definer set search_path = public as $$
   select g.id, g.kind, g.category, g.title, g.inviter, g.description, g.leader_id, p.nickname, g.capacity, g.location,
     g.s1_at, g.s2_at,
@@ -185,7 +186,8 @@ language sql stable security definer set search_path = public as $$
     g.deposit, g.book_cost, g.status, g.created_at,
     (select count(*) from participations x where x.gathering_id = g.id and x.status = 'confirmed'),
     (select count(*) from participations x where x.gathering_id = g.id and x.status = 'pending'),
-    (select x.status from participations x where x.gathering_id = g.id and x.user_id = auth.uid())
+    (select x.status from participations x where x.gathering_id = g.id and x.user_id = auth.uid()),
+    g.cover_url
   from gatherings g join profiles p on p.id = g.leader_id
   order by g.s1_at asc
 $$;
@@ -257,6 +259,10 @@ language sql stable security definer set search_path = public as $$
   where v.gathering_id = g and (public.is_member_of(g) or public.is_leader_of(g) or public.is_admin())
   group by v.candidate_id, p.nickname order by 3 desc
 $$;
+
+-- ───────── 책 사진 저장소 ─────────
+insert into storage.buckets (id, name, public) values ('covers', 'covers', true) on conflict (id) do nothing;
+create policy "covers: members upload" on storage.objects for insert to authenticated with check (bucket_id = 'covers' and public.my_role() in ('leader','admin'));
 
 -- 첫 클럽장 지정: 가입한 뒤 아래 줄의 닉네임을 바꿔 한 번 실행하세요.
 -- update public.profiles set role = 'admin' where nickname = 'TONY';

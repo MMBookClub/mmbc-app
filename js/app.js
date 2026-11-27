@@ -7,6 +7,16 @@ const MONEY = { deposit: 20000, absent: 10000, late: 5000, homework: 5000, gift:
 const DONATION = CFG.donation || { bank: 'KB국민은행', holder: '어린이재단', account: '102790-71-190660' };
 const LINKS = CFG.links || {};
 const CATEGORIES = ['경제', '인문', '특정산업', '세금', '부업', '기타'];
+const DUTIES = ['첫 세션일로부터 최소 10일 전 모집 등록', '보증금 입금을 수시로 확인하여 참여인원 확정', '카톡방에서 과제 및 참여일정 수시로 공지',
+  '당일 세션 진행 및 보증금 계산', '세션 후 우수 참여자 투표 안내 및 우수참여자 기프티콘 구매 및 발송', '보증금 최종 계산 후 환급 및 잔여 보증금 기부'];
+const dutiesBox = () => `<div class="box small"><h3>모임장이 해야 할 일</h3><ol style="margin:0;padding-left:1.2em">${DUTIES.map(d => `<li>${d}</li>`).join('')}</ol></div>`;
+const ICON = {
+  about: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5C5.5 4 9 4 12 6c3-2 6.5-2 9-.5V19c-2.5-1.5-6-1.5-9 .5-3-2-6.5-2-9-.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 6v13.5" stroke="currentColor" stroke-width="1.8"/></svg>',
+  instagram: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="17.4" cy="6.6" r="1.25" fill="currentColor"/></svg>',
+  threads: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.6 11.2c-.3-2.6-1.9-3.9-4.3-3.9-1.7 0-3 .8-3.6 2l1.5.9c.4-.8 1.1-1.2 2.1-1.2 1.3 0 2.1.7 2.4 2-.7-.1-1.5-.2-2.3-.1-2.3.1-3.8 1.4-3.7 3.2.1 1.8 1.7 2.9 3.7 2.8 2.6-.1 4-2 4.2-4.5.8.5 1.3 1.2 1.5 2 .4 1.6-.6 3.5-2.6 4.3-2.6 1-6.2.3-7.6-2.6-1.3-2.7-.9-7 1.3-9.1 2.1-2 5.9-2.3 8.3-.6 1 .7 1.8 1.7 2.2 2.9l1.7-.5C20 5.3 16.9 3 12.4 3 7 3 3.6 6.8 3.6 12s3.3 9 8.6 9c3.9 0 7.2-2.4 7.2-5.8 0-1.8-1-3.2-2.8-4zm-4.3 4.9c-1 0-1.9-.5-1.9-1.3 0-.9.9-1.5 2.1-1.6.8 0 1.6 0 2.2.2-.2 1.8-1.1 2.7-2.4 2.7z" fill="currentColor"/></svg>',
+  kakao: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4C6.8 4 3 7.1 3 10.9c0 2.4 1.6 4.5 4 5.8l-.9 3.4c-.1.3.3.6.6.4l4-2.7c.4 0 .9.1 1.3.1 5.2 0 9-3.1 9-6.9S17.2 4 12 4z" fill="currentColor"/></svg>',
+  owner: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 const store = CFG.supabaseUrl && CFG.supabaseAnonKey ? makeSupabaseStore(CFG) : demoStore;
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -62,6 +72,17 @@ function copyText(text) {
   try { navigator.clipboard.writeText(text).then(done, () => toast(text)); } catch { toast(text); }
 }
 
+async function shrinkImage(file, max = 640) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('사진을 열 수 없어요')); i.src = url; });
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
+  } finally { URL.revokeObjectURL(url); }
+}
+
 /* ── 모임 상태 ── */
 const lastDate = (g) => new Date(g.s2_at || g.s1_at);
 const isEnded = (g) => g.status === 'closed' || lastDate(g) < new Date(Date.now() - 6 * 3600e3);
@@ -86,6 +107,7 @@ function card(g, { button = true } = {}) {
   }
   return `<article class="card ${g.kind === 'special' ? 'special' : ''} ${ended ? 'ended' : ''} ${button ? '' : 'link'}" ${button ? '' : `data-open="${esc(g.id)}"`}>
     <div class="chips"><span class="chip">${esc(g.category)}</span>${statusChip(g)}</div>
+    <div class="${g.cover_url ? 'with-cover' : ''}">${g.cover_url ? `<img class="cover" src="${esc(g.cover_url)}" alt="${esc(g.title)} 표지" loading="lazy">` : ''}<div>
     <h3>${esc(g.title)}</h3>
     <dl class="meta">
       ${g.kind === 'special' ? `<dt>초대자</dt><dd>${esc(g.inviter || '-')}</dd>` : ''}
@@ -93,7 +115,7 @@ function card(g, { button = true } = {}) {
       <dt>위치</dt><dd>${esc(g.location)}</dd>
       <dt>${g.s2_at ? '세션1' : '일시'}</dt><dd class="num">${fmt(g.s1_at)}</dd>
       ${g.s2_at ? `<dt>세션2</dt><dd class="num">${fmt(g.s2_at)}</dd>` : ''}
-    </dl>
+    </dl></div></div>
     <div class="card-foot">
       <span class="small num">확정 <b>${g.confirmed_count}</b> / ${g.capacity}명${g.pending_count ? ` <span class="muted">· 대기 ${g.pending_count}</span>` : ''}</span>
       <div class="bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
@@ -171,7 +193,7 @@ function viewSignup() {
 
 /* ── 홈 ── */
 async function viewHome() {
-  const link = (url, label, sub) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${label}<small>${sub}</small></a>` : `<button type="button" data-soon="${label}">${label}<small>준비중</small></button>`;
+  const link = (url, icon, label, sub) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${ICON[icon]}${label}<small>${sub}</small></a>` : `<button type="button" data-soon="${label}">${ICON[icon]}${label}<small>준비중</small></button>`;
   const active = gatherings.filter(g => !isEnded(g));
   const regular = active.filter(g => g.kind === 'regular');
   const special = active.filter(g => g.kind === 'special');
@@ -180,19 +202,17 @@ async function viewHome() {
   if (homeTab === 'join') tabBody = regular.length ? `<div class="list">${regular.map(g => card(g)).join('')}</div>` : `<p class="empty">지금 모집 중인 모임이 없어요.<br>곧 새 모임이 열립니다.</p>`;
   else {
     const mine = gatherings.filter(g => me && g.leader_id === me.id && g.kind === 'regular' && !isEnded(g));
-    tabBody = `<div class="pad" style="padding-bottom:0"><div class="box small"><h3>모임장이 해야 할 일</h3><ol style="margin:0;padding-left:1.2em">
-      <li>세션일로부터 최소 10일 전 모집 등록</li><li>입금이 확인된 클럽원 확정</li><li>당일 세션 진행 및 보증금 계산</li>
-      <li>세션 후 우수 참여자 투표 독려 및 기프티콘 발송</li><li>보증금 최종 계산 후 환급 및 잔여 보증금 기부</li></ol></div>
+    tabBody = `<div class="pad" style="padding-bottom:0">${dutiesBox()}
       <button class="btn block accent" style="margin-top:12px" id="newG">+ 새 모임 모집하기</button></div>
       <div class="section-title"><h2>내가 모집 중인 모임</h2></div>
       ${mine.length ? `<div class="list">${mine.map(g => card(g)).join('')}</div>` : `<p class="empty">아직 연 모임이 없어요.</p>`}`;
   }
   view.innerHTML = `<section class="hero">
       <img src="icons/mark.png" alt="MMBC 로고" width="360" height="226">
-      <p>아침에 책 한 권, 돈 이야기 한 잔.<br>모닝머니북클럽은 함께 읽고 토론하는 독서 모임이에요.</p>
-      <div class="hero-links"><a href="#about">운영방침<small>모임 소개</small></a>
-      ${link(LINKS.instagram, '둘러보기', '인스타그램')}${link(LINKS.kakaoOpenChat, '공지 오픈채팅', '카카오톡')}</div>
-      ${LINKS.threads ? `<p class="small" style="margin:12px 0 0"><a href="${esc(LINKS.threads)}" target="_blank" rel="noopener">스레드에서도 만나요</a></p>` : ''}
+      <p class="slogan">재테크의 왕도는 독서입니다.</p>
+      <div class="hero-links"><a href="#about">${ICON.about}운영방침<small>모임 소개</small></a>
+      ${link(LINKS.instagram, 'instagram', '인스타그램', '@m.m.bookclub')}${link(LINKS.threads, 'threads', '쓰레드', '@m.m.bookclub')}
+      ${link(LINKS.kakaoOpenChat, 'kakao', '공지 및 각종안내', '카카오톡 오픈채팅')}${link(LINKS.clubOwner, 'owner', '클럽장이 생각하는 곳', '')}</div>
     </section>
     <div class="seg" role="tablist"><button role="tab" aria-selected="${homeTab === 'join'}" data-ht="join">참여하기</button><button role="tab" aria-selected="${homeTab === 'recruit'}" data-ht="recruit">모집하기</button></div>
     <div id="tabBody">${tabBody}</div>
@@ -216,12 +236,12 @@ async function viewHome() {
 function openJoin(id) {
   if (!me) return needLogin();
   const g = gatherings.find(x => x.id === id); if (!g) return;
-  openModal(`<h2>${esc(g.title)} 참여하기</h2>
+  openModal(`${g.cover_url ? `<img class="cover" style="width:96px;margin:0 auto" src="${esc(g.cover_url)}" alt="">` : ''}<h2>${esc(g.title)} 참여하기</h2>
     <p style="margin:0">모임장 계좌에 보증금 입금 확인 순서에 따라 <b>선착순 확정</b>됩니다.</p>
     <div class="box"><h3>보증금 ${won(g.deposit || MONEY.deposit)} 입금 계좌</h3>
       <div class="account"><div><b class="num">${esc(g.account_no || '-')}</b><div class="small muted">${esc(g.bank || '')} · 예금주 ${esc(g.account_holder || '')}</div></div>
       <button class="btn sm ghost" id="copyAcc" type="button">복사</button></div></div>
-    <div class="box"><h3>보증금 차감 기준</h3><ul><li>결석: ${won(MONEY.absent)}</li><li>지각 (1분 이후): ${won(MONEY.late)}</li><li>과제 미수행: ${won(MONEY.homework)}</li></ul></div>
+    <div class="box"><h3>보증금 차감 기준</h3><ul><li>결석: ${won(MONEY.absent)}</li><li>지각 (1분 이후): ${won(MONEY.late)}</li><li>생각할거리 미수행: ${won(MONEY.homework)}</li></ul></div>
     <p class="small muted" style="margin:0">차감된 보증금은 총 차감 금액 안에서 우수참여자 상품비, 모임장의 도서구입비, 기부금 순으로 사용됩니다.
     입금 확인 후에는 환불되지 않으니, 차감 기준을 확인하고 보증금 2만원을 입금한 뒤 참여하기를 눌러주세요.</p>
     <div class="sheet-actions"><button class="btn ghost" data-close>닫기</button><button class="btn accent" id="doJoin">입금했어요, 참여하기</button></div>`,
@@ -240,17 +260,18 @@ async function viewCreate(kind = 'regular') {
   if (kind === 'special' ? me.role !== 'admin' : !['leader', 'admin'].includes(me.role)) { go('home'); return; }
   let pre = {};
   try { const a = await store.myApplication(); if (a && a.status === 'approved') pre = a; } catch { }
-  const minDate = new Date(Date.now() + 10 * 864e5); const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   view.innerHTML = `<div class="pad"><button class="back" data-back>‹ 뒤로</button>
     <h1>${kind === 'special' ? '특별세션 만들기' : '모임 모집하기'}</h1>
-    ${kind === 'regular' ? `<p class="muted">세션일로부터 최소 10일 전에 등록해 주세요. 등록하면 홈의 "참여하기"에 날짜 순으로 보여요.</p>` : ''}
+    ${kind === 'regular' ? `<p class="muted">첫 세션일로부터 최소 10일 전에 등록하는 것을 권장해요. 등록하면 홈의 "참여하기"에 날짜 순으로 보여요.</p>` : ''}
     <form id="cf">
       <label>분야<select name="category" required>${CATEGORIES.map(c => `<option>${c}</option>`).join('')}</select></label>
       <label>${kind === 'special' ? '모임 제목' : '책 제목'}<input name="title" required maxlength="80"></label>
+      <div class="cover-pick"><img id="coverPrev" alt="" hidden><label class="btn ghost" style="font-weight:600">책 사진 올리기 <span class="opt">(선택)</span><input type="file" name="cover" accept="image/*" hidden></label>
+        <span class="hint">표지를 찍거나 골라주세요. 참여하기 목록에 함께 보여요.</span></div>
       ${kind === 'special' ? `<label>초대자<input name="inviter" required maxlength="60" placeholder="예: OO증권 애널리스트"></label>
         <label>소개 <span class="opt">(선택)</span><textarea name="description" maxlength="1000"></textarea></label>` : ''}
       <fieldset><legend>${kind === 'special' ? '일시' : '세션1'}</legend><div class="row">
-        <input type="date" name="d1" required min="${kind === 'regular' ? ymd(minDate) : ''}" aria-label="세션1 날짜"><input type="time" name="t1" required value="07:00" aria-label="세션1 시간"></div></fieldset>
+        <input type="date" name="d1" required aria-label="세션1 날짜"><input type="time" name="t1" required value="07:00" aria-label="세션1 시간"></div></fieldset>
       <fieldset><legend>세션2 <span class="opt">(선택)</span></legend><div class="row">
         <input type="date" name="d2" aria-label="세션2 날짜"><input type="time" name="t2" value="07:00" aria-label="세션2 시간"></div></fieldset>
       <label>위치<input name="location" required maxlength="100" placeholder="예: 강남역 스터디카페 / 온라인 줌"></label>
@@ -264,14 +285,20 @@ async function viewCreate(kind = 'regular') {
       <button class="btn block accent">모집하기</button>
     </form></div>`;
   const f = $('#cf');
+  let coverBlob = null;
+  f.cover.addEventListener('change', () => act(null, async () => {
+    const file = f.cover.files[0]; if (!file) return;
+    coverBlob = await shrinkImage(file);
+    const prev = $('#coverPrev'); prev.src = URL.createObjectURL(coverBlob); prev.hidden = false;
+  }));
   f.addEventListener('submit', e => {
     e.preventDefault();
     const s1 = new Date(`${f.d1.value}T${f.t1.value}`);
     const s2 = f.d2.value ? new Date(`${f.d2.value}T${f.t2.value || '07:00'}`) : null;
-    if (kind === 'regular' && s1 < new Date(Date.now() + 10 * 864e5 - 864e5)) return $('#cerr').textContent = '세션1은 오늘로부터 10일 이후여야 해요.';
     if (s2 && s2 <= s1) return $('#cerr').textContent = '세션2는 세션1보다 뒤여야 해요.';
     act(f.querySelector('button.accent'), async () => {
-      const id = await store.createGathering({ kind, category: f.category.value, title: f.title.value.trim(), inviter: f.inviter?.value.trim() || null,
+      const extra = coverBlob ? { cover_url: await store.uploadCover(coverBlob) } : {};
+      const id = await store.createGathering({ ...extra, kind, category: f.category.value, title: f.title.value.trim(), inviter: f.inviter?.value.trim() || null,
         description: f.description?.value.trim() || null, s1_at: s1.toISOString(), s2_at: s2 ? s2.toISOString() : null, location: f.location.value.trim(),
         capacity: Number(f.capacity.value), bank: f.bank.value.trim(), account_no: f.account_no.value.trim(), account_holder: f.account_holder.value.trim(), deposit: MONEY.deposit });
       await refresh(); toast('모집을 시작했어요'); go('g-' + id);
@@ -284,7 +311,7 @@ async function viewApply() {
   if (!me) { go('home'); return notice('로그인 후 신청해주세요', '', '확인', openLogin); }
   if (me.role !== 'member') { view.innerHTML = `<div class="pad"><h1>모임장 신청</h1><p>${esc(me.nickname)}님은 이미 ${roleName(me.role)}이에요. 홈의 "모집하기"에서 모임을 열 수 있어요.</p><a class="btn" href="#home">홈으로</a></div>`; return; }
   const app = await store.myApplication();
-  const duties = `<div class="box small"><h3>모임장이 해야 할 일</h3><ol style="margin:0;padding-left:1.2em"><li>세션일로부터 최소 10일 전 모집 등록</li><li>입금이 확인된 클럽원에 대하여 확정</li><li>당일에 세션 진행 및 보증금 계산</li><li>세션 완료 후 우수 참여자 투표 독려 및 기프티콘 발송</li><li>보증금 최종 계산 후 환급 및 잔여 보증금 기부</li></ol></div>`;
+  const duties = dutiesBox();
   if (app && app.status === 'pending') {
     view.innerHTML = `<div class="pad"><h1>모임장 신청</h1><div class="box"><b>신청을 받았어요.</b><p style="margin:6px 0 0">1~2일 안에 클럽장이 확인하고 승인합니다. 승인되면 홈의 "모집하기"가 열려요.</p></div><div style="margin-top:14px">${duties}</div></div>`;
     return;
@@ -350,18 +377,20 @@ async function viewDetail(id) {
   const isLeader = g.leader_id === me.id, isAdmin = me.role === 'admin', manage = isLeader || isAdmin;
   const member = !!g.my_status && g.my_status !== 'rejected';
   const ended = isEnded(g), closed = g.status === 'closed';
-  const [parts, posts] = await Promise.all([manage || member ? store.participants(id) : [], manage || member ? store.posts(id) : []]);
+  const [parts, posts, myVote] = await Promise.all([manage || member ? store.participants(id) : [], manage || member ? store.posts(id) : [], manage || member ? store.myVote(id) : null]);
   const confirmed = parts.filter(p => p.status === 'confirmed');
   const pending = parts.filter(p => p.status === 'pending');
   const sessions = g.s2_at ? [1, 2] : [1];
 
   const head = `<section class="detail-head"><button class="back" data-back>‹ 뒤로</button>
     <div class="chips"><span class="chip">${esc(g.category)}</span>${g.kind === 'special' ? '<span class="chip">특별세션</span>' : ''}${statusChip(g)}</div>
+    <div class="${g.cover_url ? 'with-cover big' : ''}">${g.cover_url ? `<img class="cover" src="${esc(g.cover_url)}" alt="${esc(g.title)} 표지">` : ''}<div>
     <h1>${esc(g.title)}</h1>
     <dl class="meta" style="margin-top:12px">${g.kind === 'special' ? `<dt>초대자</dt><dd>${esc(g.inviter)}</dd>` : ''}
       <dt>모임장</dt><dd>${esc(g.leader_nickname)}</dd><dt>위치</dt><dd>${esc(g.location)}</dd>
       <dt>${g.s2_at ? '세션1' : '일시'}</dt><dd class="num">${fmt(g.s1_at)}</dd>${g.s2_at ? `<dt>세션2</dt><dd class="num">${fmt(g.s2_at)}</dd>` : ''}
-      <dt>인원</dt><dd class="num">확정 ${g.confirmed_count} / ${g.capacity}명</dd></dl>
+      <dt>인원</dt><dd class="num">확정 ${g.confirmed_count} / ${g.capacity}명</dd></dl></div></div>
+    ${manage && !closed && g.cover_url !== undefined ? `<label class="small" style="display:inline-flex;margin-top:10px;font-weight:500;text-decoration:underline;cursor:pointer">${g.cover_url ? '책 사진 바꾸기' : '책 사진 올리기'}<input type="file" id="coverEdit" accept="image/*" hidden></label>` : ''}
     ${g.description ? `<p class="pre small" style="margin:12px 0 0;opacity:.9">${esc(g.description)}</p>` : ''}</section>`;
 
   if (!manage && !member) {
@@ -385,36 +414,48 @@ async function viewDetail(id) {
     </section>`;
   }
 
-  // 과제
-  html += `<section class="block-sec"><header><h2>과제</h2>${manage && !closed ? '<button class="btn sm" id="newPost">과제 등록</button>' : ''}</header>
+  // 생각할거리
+  html += `<section class="block-sec"><header><h2>생각할거리</h2>${manage && !closed ? '<button class="btn sm" id="newPost">생각할거리 등록</button>' : ''}</header>
     ${posts.length ? posts.map(p => `<button class="post" data-post="${esc(p.id)}"><b>${esc(p.title)}</b>
       <span class="small muted num">세션${p.session_no} · 마감 ${fmt(dayBefore(p.session_no === 2 && g.s2_at ? g.s2_at : g.s1_at), false)}까지</span></button>`).join('') : '<p class="muted small" style="margin:0">아직 등록된 과제가 없어요.</p>'}
   </section>`;
 
-  // 보증금 현황/관리
-  const rows = confirmed.map(p => {
-    const d = deductions(p);
-    const edit = manage && !closed;
-    const cells = sessions.map(n => ['absent', 'late', 'hw'].map(k => edit ? `<td><input type="checkbox" aria-label="${esc(p.nickname)} 세션${n} ${{ absent: '결석', late: '지각', hw: '과제 미수행' }[k]}"
-      data-pid="${esc(p.id)}" data-k="s${n}_${k}" ${p[`s${n}_${k}`] ? 'checked' : ''}></td>` : `<td>${p[`s${n}_${k}`] ? '<b style="color:var(--accent)">✕</b>' : '<span class="muted">·</span>'}</td>`).join('') + `<td class="money">${d[`s${n}`] ? won(d[`s${n}`]) : '-'}</td>`).join('');
-    return `<tr><td>${esc(p.nickname)}</td><td class="money">${won(MONEY.deposit)}</td>${cells}<td class="money">${won(d.total)}</td><td class="money"><b>${won(d.balance)}</b></td></tr>`;
-  }).join('');
-  const st = settlement(confirmed, g.book_cost);
-  html += `<section class="block-sec"><header><h2>보증금 ${manage ? '관리' : '현황'}</h2><span class="small muted">결석 ${won(MONEY.absent)} · 지각 ${won(MONEY.late)} · 과제 ${won(MONEY.homework)}</span></header>
-    ${confirmed.length ? `<div class="scroll"><table class="dep"><thead><tr><th rowspan="2">참여자</th><th rowspan="2">납입</th>${sessions.map(n => `<th colspan="4">세션${n}</th>`).join('')}<th rowspan="2">차감</th><th rowspan="2">잔액</th></tr>
-      <tr>${sessions.map(() => '<th>결석</th><th>지각</th><th>과제</th><th>합계</th>').join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+  // 보증금 현황/관리 (모임장은 '현재 상태 저장'을 눌러야 반영)
+  const edit = manage && !closed;
+  const DKEYS = ['s1_absent', 's1_late', 's1_hw', 's2_absent', 's2_late', 's2_hw'];
+  const draft = { rows: confirmed.map(p => ({ ...p })), book: g.book_cost || 0, dirty: false };
+  const depHtml = () => {
+    const rows = draft.rows.map(p => {
+      const d = deductions(p);
+      const cells = sessions.map(n => ['absent', 'late', 'hw'].map(k => edit ? `<td><input type="checkbox" aria-label="${esc(p.nickname)} 세션${n} ${{ absent: '결석', late: '지각', hw: '생각할거리 미수행' }[k]}"
+        data-pid="${esc(p.id)}" data-k="s${n}_${k}" ${p[`s${n}_${k}`] ? 'checked' : ''}></td>` : `<td>${p[`s${n}_${k}`] ? '<b style="color:var(--accent)">✕</b>' : '<span class="muted">·</span>'}</td>`).join('') + `<td class="money">${d[`s${n}`] ? won(d[`s${n}`]) : '-'}</td>`).join('');
+      return `<tr><td>${esc(p.nickname)}</td><td class="money">${won(MONEY.deposit)}</td>${cells}<td class="money">${won(d.total)}</td><td class="money"><b>${won(d.balance)}</b></td></tr>`;
+    }).join('');
+    const st = settlement(draft.rows, draft.book);
+    return `<header><h2>보증금 ${manage ? '관리' : '현황'}</h2><span class="small muted">결석 ${won(MONEY.absent)} · 지각 ${won(MONEY.late)} · 생각할거리 ${won(MONEY.homework)}</span></header>
+    ${draft.rows.length ? `<div class="scroll"><table class="dep"><thead><tr><th rowspan="2">참여자</th><th rowspan="2">납입</th>${sessions.map(n => `<th colspan="4">세션${n}</th>`).join('')}<th rowspan="2">차감</th><th rowspan="2">잔액</th></tr>
+      <tr>${sessions.map(() => '<th>결석</th><th>지각</th><th>생각할거리</th><th>합계</th>').join('')}</tr></thead><tbody>${rows}</tbody></table></div>
       <dl class="settle"><div><dt>차감보증금 합계</dt><dd>${won(st.total)}</dd></div>
         <div><dt>우수참여자 기프티콘<br><span class="small muted">합계가 ${won(MONEY.gift)} 미만이면 0원</span></dt><dd>${won(st.gift)}</dd></div>
-        <div><dt>모임장 도서구입비<br><span class="small muted">최대 ${won(st.bookMax)}</span></dt><dd>${manage && !closed ? `<input id="bookCost" type="number" inputmode="numeric" min="0" max="${st.bookMax}" step="100" value="${st.book}" aria-label="도서구입비">원` : won(st.book)}</dd></div>
+        <div><dt>모임장 도서구입비<br><span class="small muted">최대 ${won(st.bookMax)}</span></dt><dd>${edit ? `<input id="bookCost" type="number" inputmode="numeric" min="0" max="${st.bookMax}" step="100" value="${st.book}" aria-label="도서구입비">원` : won(st.book)}</dd></div>
         <div><dt>기부금</dt><dd>${won(st.donation)}</dd></div></dl>
       <div class="box small"><b>기부금 계좌</b><div class="account"><div><b class="num">${esc(DONATION.account)}</b><div class="muted">${esc(DONATION.bank)} (${esc(DONATION.holder)})</div></div><button class="btn sm ghost" id="copyDon">복사</button></div></div>`
-    : '<p class="muted small" style="margin:0">확정된 참여자가 생기면 보증금 표가 나타나요.</p>'}
+    : '<p class="muted small" style="margin:0">확정된 참여자가 생기면 보증금 표가 나타나요.</p>'}`;
+  };
+  html += `<section class="block-sec" id="depSec">${depHtml()}</section>`;
+
+  // 우수 참여자 투표: 참여(확정)한 순간부터 목록이 보이고, 모임 종료 전까지 언제든 바꿀 수 있음
+  const canVote = !closed && (g.my_status === 'confirmed' || manage);
+  const cands = confirmed.filter(p => p.user_id !== me.id);
+  html += `<section class="block-sec"><header><h2>우수 참여자 투표</h2><span class="small muted">익명 · 1명 · 종료 전까지 수정 가능</span></header>
+    ${cands.length ? `<form id="vf" style="gap:8px">${cands.map(p => `<label class="vote-opt"><input type="radio" name="c" value="${esc(p.user_id)}" ${myVote === p.user_id ? 'checked' : ''} ${canVote ? '' : 'disabled'} required>${esc(p.nickname)}</label>`).join('')}
+      ${canVote ? '' : `<p class="small muted" style="margin:0">${closed ? '종료된 모임이에요.' : '참여가 확정되면 투표할 수 있어요.'}</p>`}
+      <div class="sheet-actions">${canVote ? `<button class="btn accent">${myVote ? '투표 수정하기' : '투표하기'}</button>` : ''}<button type="button" class="btn ghost" id="resBtn">결과보기</button></div></form>`
+    : `<p class="muted small" style="margin:0">확정된 참여자가 생기면 투표 목록이 나타나요.</p><button type="button" class="btn ghost" id="resBtn">결과보기</button>`}
   </section>`;
 
-  // 투표
-  html += `<section class="block-sec"><header><h2>우수 참여자 투표</h2><span class="small muted">익명으로 1명</span></header>
-    <div class="sheet-actions"><button class="btn ghost" id="voteBtn" ${confirmed.length < 2 || closed || !(g.my_status === 'confirmed' || manage) ? 'disabled' : ''}>투표하기</button><button class="btn ghost" id="resBtn">결과보기</button></div></section>`;
-
+  if (edit && draft.rows.length) html += `<div class="pad" style="padding-bottom:0;display:grid;gap:6px"><p class="small" id="dirtyNote" style="margin:0;color:var(--warn)" hidden>저장하지 않은 변경이 있어요. 저장하지 않고 나가면 반영되지 않아요.</p>
+    <button class="btn block" id="saveDep">현재 상태 저장</button></div>`;
   if (manage && !closed) html += `<div class="pad"><button class="btn block danger" id="endBtn">모임 종료</button></div>`;
   view.innerHTML = html;
 
@@ -422,62 +463,73 @@ async function viewDetail(id) {
   view.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => act(b, async () => {
     await store.updateParticipation(b.dataset.pid, { status: b.dataset.st }); await refresh(); viewDetail(id);
   })));
-  view.querySelectorAll('input[type=checkbox][data-k]').forEach(c => c.addEventListener('change', () => act(null, async () => {
-    if (c.dataset.k.endsWith('_absent') && c.checked) { /* 결석이면 지각은 의미가 없으니 해제 */
-      const late = view.querySelector(`[data-pid="${c.dataset.pid}"][data-k="${c.dataset.k.replace('absent', 'late')}"]`);
-      if (late?.checked) await store.updateParticipation(c.dataset.pid, { [late.dataset.k]: false });
+  const bindDep = () => {
+    const sec = $('#depSec');
+    sec.querySelectorAll('input[type=checkbox][data-k]').forEach(c => c.addEventListener('change', () => {
+      const row = draft.rows.find(r => r.id === c.dataset.pid);
+      row[c.dataset.k] = c.checked;
+      if (c.checked && c.dataset.k.endsWith('_absent')) row[c.dataset.k.replace('absent', 'late')] = false; // 결석이면 지각은 해제
+      if (c.checked && c.dataset.k.endsWith('_late')) row[c.dataset.k.replace('late', 'absent')] = false;
+      markDirty(); sec.innerHTML = depHtml(); bindDep();
+    }));
+    $('#bookCost', sec)?.addEventListener('change', e => {
+      const st = settlement(draft.rows, 0);
+      draft.book = Math.max(0, Math.min(Number(e.target.value) || 0, st.bookMax)); markDirty(); sec.innerHTML = depHtml(); bindDep();
+    });
+    $('#copyDon', sec)?.addEventListener('click', () => copyText(`${DONATION.bank} ${DONATION.account}`));
+  };
+  const markDirty = () => { draft.dirty = true; const n = $('#dirtyNote'); if (n) n.hidden = false; const b = $('#saveDep'); if (b) b.classList.add('accent'); };
+  bindDep();
+  $('#saveDep')?.addEventListener('click', e => act(e.currentTarget, async () => {
+    for (const r of draft.rows) {
+      const orig = confirmed.find(p => p.id === r.id); const patch = {};
+      DKEYS.forEach(k => { if (!!orig[k] !== !!r[k]) patch[k] = !!r[k]; });
+      if (Object.keys(patch).length) await store.updateParticipation(r.id, patch);
     }
-    await store.updateParticipation(c.dataset.pid, { [c.dataset.k]: c.checked }); viewDetail(id);
-  })));
-  $('#bookCost')?.addEventListener('change', e => act(null, async () => {
-    const v = Math.max(0, Math.min(Number(e.target.value) || 0, st.bookMax));
-    await store.updateGathering(id, { book_cost: v }); await refresh(); viewDetail(id);
+    const book = settlement(draft.rows, draft.book).book;
+    if ((g.book_cost || 0) !== book) await store.updateGathering(id, { book_cost: book });
+    await refresh(); toast('저장했어요'); viewDetail(id);
   }));
-  $('#copyDon')?.addEventListener('click', () => copyText(`${DONATION.bank} ${DONATION.account}`));
+  $('#vf')?.addEventListener('submit', e => { e.preventDefault(); const f = e.currentTarget; act(f.querySelector('.accent'), async () => {
+    await store.vote(g.id, f.c.value); toast(myVote ? '투표를 수정했어요' : '투표했어요'); viewDetail(id);
+  }); });
+  $('#coverEdit')?.addEventListener('change', e => act(null, async () => {
+    const file = e.target.files[0]; if (!file) return;
+    const url = await store.uploadCover(await shrinkImage(file));
+    await store.updateGathering(id, { cover_url: url }); await refresh(); toast('책 사진을 바꿨어요'); viewDetail(id);
+  }));
   $('#newPost')?.addEventListener('click', () => openPostForm(g));
   view.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', () => openPost(g, posts.find(p => p.id === b.dataset.post), manage || member, closed)));
-  $('#voteBtn')?.addEventListener('click', () => openVote(g, confirmed));
   $('#resBtn')?.addEventListener('click', () => openResults(g));
-  $('#endBtn')?.addEventListener('click', () => confirmBox('모든 내용이 비활성화 됩니다!', '보증금 환급과 기부금 이체까지 완료하였나요?', '예', '아니오', async () => {
+  $('#endBtn')?.addEventListener('click', () => draft.dirty ? notice('먼저 저장해 주세요', '보증금 관리에 저장하지 않은 변경이 있어요. "현재 상태 저장"을 누른 뒤 모임을 종료해 주세요.') : confirmBox('모든 내용이 비활성화 됩니다!', '보증금 환급과 기부금 이체까지 완료하였나요?', '예', '아니오', async () => {
     await store.updateGathering(id, { status: 'closed' }); await refresh();
     notice('모임을 종료합니다', '수고 많으셨어요!', '확인', () => viewDetail(id));
   }));
 }
 
 function openPostForm(g) {
-  openModal(`<h2>과제 등록</h2><form id="pf">
-    ${g.s2_at ? `<label>어느 세션 과제인가요?<select name="session_no"><option value="1">세션1 (${fmt(g.s1_at, false)})</option><option value="2">세션2 (${fmt(g.s2_at, false)})</option></select></label>` : ''}
-    <p class="hint" style="margin:0">과제 마감은 세션 전날로 자동 설정돼요.</p>
+  openModal(`<h2>생각할거리 등록</h2><form id="pf">
+    ${g.s2_at ? `<label>어느 세션의 생각할거리인가요?<select name="session_no"><option value="1">세션1 (${fmt(g.s1_at, false)})</option><option value="2">세션2 (${fmt(g.s2_at, false)})</option></select></label>` : ''}
+    <p class="hint" style="margin:0">마감은 세션 전날로 자동 설정돼요.</p>
     <label>게시글 제목<input name="title" required maxlength="100"></label>
     <label>내용<textarea name="body" required maxlength="4000"></textarea></label>
     <div class="sheet-actions"><button type="button" class="btn ghost" data-close>취소</button><button class="btn">등록하기</button></div></form>`,
     sh => { const f = $('#pf', sh); f.addEventListener('submit', e => { e.preventDefault(); act(f.querySelector('button:not([data-close])'), async () => {
       await store.createPost(g.id, { session_no: Number(f.session_no?.value || 1), title: f.title.value.trim(), body: f.body.value.trim() });
-      closeModal(); toast('과제를 등록했어요'); viewDetail(g.id); }); }); });
+      closeModal(); toast('생각할거리를 등록했어요'); viewDetail(g.id); }); }); });
 }
 async function openPost(g, p, canComment, closed) {
   const due = fmt(dayBefore(p.session_no === 2 && g.s2_at ? g.s2_at : g.s1_at), false);
   const draw = async () => {
     const cs = await store.comments(p.id);
-    openModal(`<h2>${esc(p.title)}</h2><p class="small muted" style="margin:0">세션${p.session_no} · 과제 마감 ${due}까지</p>
+    openModal(`<h2>${esc(p.title)}</h2><p class="small muted" style="margin:0">세션${p.session_no} · 마감 ${due}까지</p>
       <div class="pre">${esc(p.body)}</div>
       <h3>댓글 ${cs.length}</h3><div>${cs.map(c => `<div class="comment"><b>${esc(c.nickname)}</b> <span class="small muted">${fmt(c.created_at)}</span><div class="pre">${esc(c.body)}</div></div>`).join('') || '<p class="small muted">첫 댓글을 남겨주세요.</p>'}</div>
-      ${canComment && !closed ? `<form id="cmf"><textarea name="body" required maxlength="2000" placeholder="과제나 생각을 남겨주세요" style="min-height:80px"></textarea><button class="btn">댓글 등록</button></form>` : ''}
+      ${canComment && !closed ? `<form id="cmf"><textarea name="body" required maxlength="2000" placeholder="내 생각을 남겨주세요" style="min-height:80px"></textarea><button class="btn">댓글 등록</button></form>` : ''}
       <button class="btn ghost" data-close>닫기</button>`,
       sh => { const f = $('#cmf', sh); f && f.addEventListener('submit', e => { e.preventDefault(); act(f.querySelector('button'), async () => { await store.addComment(p.id, f.body.value.trim()); draw(); }); }); });
   };
   draw();
-}
-async function openVote(g, confirmed) {
-  const mine = await store.myVote(g.id);
-  const cands = confirmed.filter(p => p.user_id !== me.id);
-  openModal(`<h2>우수 참여자 투표</h2><p class="small muted" style="margin:0">누가 누구를 뽑았는지는 아무도 볼 수 없어요. 다시 투표하면 바뀝니다.</p>
-    <form id="vf" style="gap:8px">${cands.map(p => `<label class="vote-opt"><input type="radio" name="c" value="${esc(p.user_id)}" ${mine === p.user_id ? 'checked' : ''} required>${esc(p.nickname)}</label>`).join('')}
-    <div class="sheet-actions"><button type="button" class="btn ghost" id="vres">결과보기</button><button class="btn accent">투표하기</button></div></form>`,
-    sh => {
-      $('#vres', sh).addEventListener('click', () => openResults(g));
-      const f = $('#vf', sh); f.addEventListener('submit', e => { e.preventDefault(); act(f.querySelector('.accent'), async () => { await store.vote(g.id, f.c.value); toast('투표했어요'); openResults(g); }); });
-    });
 }
 async function openResults(g) {
   const rs = await store.voteResults(g.id); const max = Math.max(1, ...rs.map(r => r.votes));
@@ -518,10 +570,10 @@ function viewAbout() {
     <h2>이렇게 참여해요</h2>
     <ol><li>홈의 <b>참여하기</b>에서 모임을 고르고, 모임장 계좌로 보증금 ${won(MONEY.deposit)}을 입금해요.</li>
       <li><b>참여하기</b> 버튼을 누르면 "신청중"이 되고, 모임장이 입금 순서대로 확정해요.</li>
-      <li>세션 전날까지 과제를 하고, 세션에서 이야기를 나눠요.</li>
+      <li>세션 전날까지 생각할거리에 답을 남기고, 세션에서 이야기를 나눠요.</li>
       <li>모임이 끝나면 우수 참여자를 익명으로 투표하고, 남은 보증금을 돌려받아요.</li></ol>
     <h2>보증금 차감 기준</h2>
-    <div class="flow"><div><b>${won(MONEY.absent)}</b>결석</div><div><b>${won(MONEY.late)}</b>지각 (1분 이후)</div><div><b>${won(MONEY.homework)}</b>과제 미수행</div></div>
+    <div class="flow"><div><b>${won(MONEY.absent)}</b>결석</div><div><b>${won(MONEY.late)}</b>지각 (1분 이후)</div><div><b>${won(MONEY.homework)}</b>생각할거리 미수행</div></div>
     <p class="small muted">입금이 확인된 뒤에는 환불되지 않아요.</p>
     <h2>차감된 보증금은 이렇게 쓰여요</h2>
     <ol><li><b>우수 참여자 상품</b>: 기프티콘 ${won(MONEY.gift)} (차감 합계가 ${won(MONEY.gift)} 미만이면 없음)</li>
@@ -532,7 +584,7 @@ function viewAbout() {
     <p>세션에 1번 이상 참여한 클럽원이라면 누구나 신청할 수 있어요. 우측 상단 <b>모임장 신청하기</b>로 신청하면 1~2일 안에 클럽장이 승인해요.</p>
     <h2>개인정보</h2>
     <p>가입에는 닉네임, 비밀번호, 업종만 필요해요. 연락처와 이메일은 받지 않고, 성함과 나이는 선택이며 클럽장만 볼 수 있어요.</p>
-    ${LINKS.kakaoOpenChat ? `<a class="btn block" href="${esc(LINKS.kakaoOpenChat)}" target="_blank" rel="noopener">공지 오픈채팅 들어가기</a>` : ''}
+    ${LINKS.kakaoOpenChat ? `<a class="btn block" href="${esc(LINKS.kakaoOpenChat)}" target="_blank" rel="noopener">공지 및 각종안내 오픈채팅 들어가기</a>` : ''}
   </div>`;
 }
 

@@ -48,6 +48,11 @@ export function makeSupabaseStore(cfg) {
       const leader_id = await uidNow();
       const row = ok(await sb.from('gatherings').insert({ ...data, leader_id }).select('id').single()); return row.id;
     },
+    async uploadCover(blob) {
+      const path = `${crypto.randomUUID()}.jpg`;
+      ok(await sb.storage.from('covers').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' }));
+      return sb.storage.from('covers').getPublicUrl(path).data.publicUrl;
+    },
     async updateGathering(id, patch) { ok(await sb.from('gatherings').update(patch).eq('id', id)); },
     async join(gid) { ok(await sb.rpc('join_gathering', { g: gid })); },
     async participants(gid) {

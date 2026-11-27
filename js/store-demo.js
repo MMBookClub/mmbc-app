@@ -79,7 +79,7 @@ export const demoStore = {
       return { ...g, bank: logged ? g.bank : null, account_no: logged ? g.account_no : null, account_holder: logged ? g.account_holder : null,
         leader_nickname: d.users.find(u => u.id === g.leader_id)?.nickname || '',
         confirmed_count: ps.filter(p => p.status === 'confirmed').length, pending_count: ps.filter(p => p.status === 'pending').length,
-        my_status: mine ? mine.status : null };
+        my_status: mine ? mine.status : null, cover_url: g.cover_url || null };
     }).sort((a, b) => a.s1_at.localeCompare(b.s1_at));
   },
   async createGathering(data) {
@@ -88,6 +88,9 @@ export const demoStore = {
     if (data.kind === 'special' && me.role !== 'admin') fail('특별세션은 클럽장만 열 수 있습니다');
     const g = { id: uid(), kind: 'regular', deposit: 20000, book_cost: 0, status: 'open', created_at: now(), inviter: '', description: '', ...data, leader_id: me.id };
     d.gatherings.push(g); save(); return g.id;
+  },
+  async uploadCover(blob) {
+    return await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('사진을 읽지 못했어요')); r.readAsDataURL(blob); });
   },
   async updateGathering(id, patch) {
     const d = load(); const g = d.gatherings.find(x => x.id === id); Object.assign(g, patch); save();
