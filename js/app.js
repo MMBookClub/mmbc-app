@@ -44,12 +44,18 @@ let adminTab = 'apps';
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2400); }
 function openModal(html, bind) {
   const m = $('#modal'), sh = $('.sheet', m);
+  clearTimeout(closeModal.t); m.classList.remove('closing');
   sh.innerHTML = html; m.hidden = false; document.body.style.overflow = 'hidden';
   sh.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeModal));
   if (bind) bind(sh);
   const f = sh.querySelector('input,textarea,select,button'); f && f.focus({ preventScroll: true });
 }
-function closeModal() { $('#modal').hidden = true; $('.sheet').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal() {
+  const m = $('#modal'); if (m.hidden) return;
+  const done = () => { m.classList.remove('closing'); m.hidden = true; $('.sheet', m).innerHTML = ''; document.body.style.overflow = ''; };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
+  m.classList.add('closing'); closeModal.t = setTimeout(done, 170);
+}
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
@@ -113,17 +119,33 @@ async function disablePushQuiet() { try { const reg = await pushReg(); const sub
 async function syncPush() { // 로그인한 사람과 이 기기의 알림을 연결
   try { if (!me || Notification.permission !== 'granted') return; const reg = await pushReg(); const sub = reg && await reg.pushManager.getSubscription(); if (sub) await store.savePush(sub); } catch { }
 }
-async function pushBox(el) {
+const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+const PUSH_HELP = {
+  'ios-install': `<b>아이폰은 홈 화면에 추가한 뒤 켤 수 있어요</b><p class="small" style="margin:4px 0 0">Safari 아래쪽 <b>공유 버튼</b> → <b>홈 화면에 추가</b> → 홈 화면의 MMBC 앱을 열고 다시 🔔을 눌러 주세요.</p>`,
+  denied: () => `<b>이 브라우저에서 알림이 막혀 있어요</b><p class="small" style="margin:4px 0 0">${isSamsung
+    ? '삼성 인터넷 오른쪽 아래 <b>≡ 메뉴 → 설정 → 사이트 및 다운로드 → 알림</b>에서 mmbc-app.vercel.app을 <b>허용</b>으로 바꿔 주세요.'
+    : '주소창 왼쪽 <b>자물쇠(또는 ⓘ) → 권한 → 알림</b>을 <b>허용</b>으로 바꿔 주세요.'} 그다음 새로고침하고 다시 🔔을 눌러 주세요.</p>`,
+  unsupported: `<b>이 브라우저는 알림을 지원하지 않아요</b><p class="small" style="margin:4px 0 0">크롬이나 삼성 인터넷의 일반 탭(비밀 모드 말고)에서 열어 주세요.</p>`,
+};
+async function pushBox(el, { always = false } = {}) {
   if (!el || !me) return;
   const st = await pushState();
-  const msg = {
-    off: `<b>모임 알림 받기</b><p class="small" style="margin:4px 0 10px">새 모임이 열릴 때, 모임장 승인, 모임 3일 전과 하루 전에 알려드려요.</p><button class="btn sm accent" id="pushOn">알림 켜기</button>`,
-    'ios-install': `<b>아이폰에서 알림을 받으려면</b><p class="small" style="margin:4px 0 0">Safari 아래쪽 <b>공유 버튼</b> → <b>홈 화면에 추가</b>를 누른 뒤, 홈 화면의 MMBC 앱을 열고 여기서 알림을 켜 주세요.</p>`,
-    denied: `<b>알림이 차단되어 있어요</b><p class="small" style="margin:4px 0 0">휴대폰 설정 → 알림(또는 브라우저 사이트 설정)에서 이 사이트의 알림을 허용해 주세요.</p>`,
-  }[st];
-  if (!msg) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="box" style="margin:12px 16px 0">${msg}</div>`;
-  $('#pushOn', el)?.addEventListener('click', e => act(e.currentTarget, async () => { await enablePush(); pushBox(el); }));
+  updateBell(st);
+  let html;
+  if (st === 'on') html = always ? `<b>알림이 켜져 있어요 🔔</b><p class="small" style="margin:4px 0 10px">새 모임, 모임장 승인, 모임 3일 전과 하루 전에 알려드려요.</p><div class="sheet-actions"><button class="btn sm ghost" id="pushTest">시험 알림 보내기</button><button class="btn sm ghost" id="pushOff">알림 끄기</button></div>` : '';
+  else if (st === 'off') html = `<b>모임 알림 받기</b><p class="small" style="margin:4px 0 10px">새 모임이 열릴 때, 모임장 승인, 모임 3일 전과 하루 전에 알려드려요.</p><button class="btn sm accent" id="pushOn">🔔 알림 켜기</button>`;
+  else html = typeof PUSH_HELP[st] === 'function' ? PUSH_HELP[st]() : PUSH_HELP[st];
+  el.innerHTML = html ? `<div class="box push-box" style="margin:12px 16px 0">${html}</div>` : '';
+  $('#pushOn', el)?.addEventListener('click', e => act(e.currentTarget, async () => { await enablePush(); celebrate(e.currentTarget); pushBox(el, { always }); }));
+  $('#pushOff', el)?.addEventListener('click', e => act(e.currentTarget, async () => { await disablePush(); pushBox(el, { always }); }));
+  $('#pushTest', el)?.addEventListener('click', e => act(e.currentTarget, async () => {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('모닝머니북클럽', { body: '알림이 잘 도착해요! 모임 소식을 이렇게 알려드릴게요.', icon: 'icons/icon-192.png', badge: 'icons/icon-64.png' });
+  }));
+}
+function updateBell(st) { const b = $('#bellBtn'); if (b) b.classList.toggle('dot', st !== 'on'); }
+function openPushModal() {
+  openModal(`<h2>모임 알림</h2><div id="pushModalBox" style="margin:0 -16px"></div><button class="btn ghost" data-close>닫기</button>`, sh => pushBox($('#pushModalBox', sh), { always: true }));
 }
 
 /* ── 모임 상태 ── */
@@ -176,18 +198,18 @@ function renderTop() {
   const t = $('#topActions');
   const applyBtn = (!me || me.role === 'member') ? `<a href="#apply">모임장 신청하기</a>` : '';
   const adminBtn = me && me.role === 'admin' ? `<a href="#admin">클럽장 관리</a>` : '';
-  t.innerHTML = me ? `${adminBtn}${applyBtn}<button class="fill" id="meBtn">${esc(me.nickname)}</button>` : `${applyBtn}<button class="fill" id="loginBtn">로그인</button>`;
+  const bell = `<button class="icon-btn" id="bellBtn" aria-label="알림 설정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>`;
+  t.innerHTML = me ? `${adminBtn}${applyBtn}${bell}<button class="fill" id="meBtn">${esc(me.nickname)}</button>` : `${applyBtn}<button class="fill" id="loginBtn">로그인</button>`;
+  $('#bellBtn', t)?.addEventListener('click', openPushModal);
+  if (me) pushState().then(updateBell).catch(() => { });
   $('#loginBtn', t)?.addEventListener('click', openLogin);
   $('#meBtn', t)?.addEventListener('click', () => openModal(`<h2>${esc(me.nickname)}님</h2>
     <p style="margin:0" class="muted">등급: ${roleName(me.role)}${me.industry ? ` · ${esc(me.industry)}` : ''}</p>
-    <div id="pushRow"></div>
+    <div id="pushRow" style="margin:0 -16px"></div>
     <div class="sheet-actions"><button class="btn ghost" data-close>닫기</button><button class="btn" id="out">로그아웃</button></div>`,
     async sh => {
       $('#out', sh).addEventListener('click', async () => { await disablePushQuiet(); await store.signOut(); me = null; closeModal(); toast('로그아웃했어요'); route(); });
-      const st = await pushState(), row = $('#pushRow', sh);
-      if (st === 'on') { row.innerHTML = `<button class="btn ghost block" id="pushOff">이 기기 알림 끄기</button>`; $('#pushOff', sh).onclick = e => act(e.currentTarget, async () => { await disablePush(); closeModal(); }); }
-      else if (st === 'off') { row.innerHTML = `<button class="btn accent block" id="pushOn2">이 기기에서 모임 알림 켜기</button>`; $('#pushOn2', sh).onclick = e => act(e.currentTarget, async () => { await enablePush(); closeModal(); }); }
-      else pushBox(row);
+      pushBox($('#pushRow', sh), { always: true });
     }));
   const bar = $('#demoBar');
   if (store.mode === 'demo') {
@@ -298,7 +320,7 @@ function openJoin(id) {
     sh => {
       $('#copyAcc', sh).addEventListener('click', () => copyText(`${g.bank} ${g.account_no}`));
       $('#doJoin', sh).addEventListener('click', e => act(e.currentTarget, async () => {
-        await store.join(id); closeModal(); await refresh();
+        const at = pointOf(e.currentTarget); await store.join(id); closeModal(); celebrate(at); await refresh();
         notice('신청했어요', '모임장이 입금을 확인하면 "확정"으로 바뀝니다. 내 모임 탭에서 확인할 수 있어요.', '확인'); render();
       }));
     });
@@ -351,7 +373,7 @@ async function viewCreate(kind = 'regular') {
       const id = await store.createGathering({ ...extra, kind, category: f.category.value, title: f.title.value.trim(), inviter: f.inviter?.value.trim() || null,
         description: f.description?.value.trim() || null, s1_at: s1.toISOString(), s2_at: s2 ? s2.toISOString() : null, location: f.location.value.trim(),
         capacity: Number(f.capacity.value), bank: f.bank.value.trim(), account_no: f.account_no.value.trim(), account_holder: f.account_holder.value.trim(), deposit: MONEY.deposit });
-      await refresh(); toast('모집을 시작했어요'); go('g-' + id);
+      celebrate(pointOf(f.querySelector('button.accent'))); await refresh(); toast('모집을 시작했어요'); go('g-' + id);
     });
   });
 }
@@ -496,13 +518,14 @@ async function viewDetail(id) {
   html += `<section class="block-sec" id="depSec">${depHtml()}</section>`;
 
   // 우수 참여자 투표: 참여(확정)한 순간부터 목록이 보이고, 모임 종료 전까지 언제든 바꿀 수 있음
-  const canVote = !closed && (g.my_status === 'confirmed' || manage);
-  const cands = confirmed.filter(p => p.user_id !== me.id);
-  html += `<section class="block-sec"><header><h2>우수 참여자 투표</h2><span class="small muted">익명 · 1명 · 종료 전까지 수정 가능</span></header>
+  // 세션에 참여한 사람(신청중·확정) 모두가 투표하고 후보가 됩니다. 모임장도 투표할 수 있어요.
+  const canVote = !closed && (member || manage);
+  const cands = parts.filter(p => p.status !== 'rejected' && p.user_id !== me.id);
+  html += `<section class="block-sec"><header><h2>우수 참여자 투표</h2><span class="small muted">참여자 모두 · 익명 · 1명 · 종료 전까지 수정 가능</span></header>
     ${cands.length ? `<form id="vf" style="gap:8px">${cands.map(p => `<label class="vote-opt"><input type="radio" name="c" value="${esc(p.user_id)}" ${myVote === p.user_id ? 'checked' : ''} ${canVote ? '' : 'disabled'} required>${esc(p.nickname)}</label>`).join('')}
-      ${canVote ? '' : `<p class="small muted" style="margin:0">${closed ? '종료된 모임이에요.' : '참여가 확정되면 투표할 수 있어요.'}</p>`}
+      ${canVote ? '' : `<p class="small muted" style="margin:0">${closed ? '종료된 모임이에요.' : '세션 참여자만 투표할 수 있어요.'}</p>`}
       <div class="sheet-actions">${canVote ? `<button class="btn accent">${myVote ? '투표 수정하기' : '투표하기'}</button>` : ''}<button type="button" class="btn ghost" id="resBtn">결과보기</button></div></form>`
-    : `<p class="muted small" style="margin:0">확정된 참여자가 생기면 투표 목록이 나타나요.</p><button type="button" class="btn ghost" id="resBtn">결과보기</button>`}
+    : `<p class="muted small" style="margin:0">참여자가 생기면 투표 목록이 나타나요.</p><button type="button" class="btn ghost" id="resBtn">결과보기</button>`}
   </section>`;
 
   if (edit && draft.rows.length) html += `<div class="pad" style="padding-bottom:0;display:grid;gap:6px"><p class="small" id="dirtyNote" style="margin:0;color:var(--warn)" hidden>저장하지 않은 변경이 있어요. 저장하지 않고 나가면 반영되지 않아요.</p>
@@ -531,7 +554,7 @@ async function viewDetail(id) {
   };
   const markDirty = () => { draft.dirty = true; const n = $('#dirtyNote'); if (n) n.hidden = false; const b = $('#saveDep'); if (b) b.classList.add('accent'); };
   bindDep();
-  $('#saveDep')?.addEventListener('click', e => act(e.currentTarget, async () => {
+  $('#saveDep')?.addEventListener('click', e => { const at = pointOf(e.currentTarget); act(e.currentTarget, async () => {
     for (const r of draft.rows) {
       const orig = confirmed.find(p => p.id === r.id); const patch = {};
       DKEYS.forEach(k => { if (!!orig[k] !== !!r[k]) patch[k] = !!r[k]; });
@@ -539,10 +562,10 @@ async function viewDetail(id) {
     }
     const book = settlement(draft.rows, draft.book).book;
     if ((g.book_cost || 0) !== book) await store.updateGathering(id, { book_cost: book });
-    await refresh(); toast('저장했어요'); viewDetail(id);
-  }));
+    celebrate(at, 10); await refresh(); toast('저장했어요'); viewDetail(id);
+  }); });
   $('#vf')?.addEventListener('submit', e => { e.preventDefault(); const f = e.currentTarget; act(f.querySelector('.accent'), async () => {
-    await store.vote(g.id, f.c.value); toast(myVote ? '투표를 수정했어요' : '투표했어요'); viewDetail(id);
+    const at = pointOf(f.querySelector('.accent')); await store.vote(g.id, f.c.value); celebrate(at); toast(myVote ? '투표를 수정했어요' : '투표했어요'); viewDetail(id);
   }); });
   $('#coverEdit')?.addEventListener('change', e => act(null, async () => {
     const file = e.target.files[0]; if (!file) return;
@@ -658,7 +681,61 @@ async function render() {
     else await viewHome();
   } catch (e) { console.error(e); view.innerHTML = `<p class="empty">불러오지 못했어요: ${esc(e.message)}</p>`; }
 }
-async function route() { if (!$('#modal').hidden) closeModal(); await refresh().catch(e => toast(e.message)); window.scrollTo(0, 0); await render(); }
+async function route() {
+  if (!$('#modal').hidden) closeModal();
+  if (!gatherings.length && !view.children.length) view.innerHTML = skeleton();
+  await refresh().catch(e => toast(e.message)); window.scrollTo(0, 0); await render();
+  view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter');
+}
+function skeleton() { return `<div class="hero" style="min-height:300px"></div><div class="list" style="margin-top:18px">${'<div class="card sk"><i></i><i></i><i></i></div>'.repeat(3)}</div>`; }
+
+/* ── 움직임: 누를 때 물결, 축하 효과, 카드 순차 등장, 탭 표시 이동, 숫자 카운트 ── */
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+function pointOf(el) { if (!el) return { x: innerWidth / 2, y: innerHeight / 2 }; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+function buzz(ms = 12) { try { navigator.vibrate && navigator.vibrate(ms); } catch { } }
+function celebrate(at, n = 16) {
+  buzz(18); if (calm.matches) return;
+  const p = at && at.getBoundingClientRect ? pointOf(at) : at || pointOf(null);
+  const colors = ['#E36A2E', '#F4E4C1', '#0C4A3C', '#F2A541', '#7FD6A4'];
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('i'); d.className = 'spark';
+    const ang = Math.PI * 2 * i / n + Math.random() * .5, dist = 50 + Math.random() * 60;
+    d.style.cssText = `left:${p.x}px;top:${p.y}px;background:${colors[i % colors.length]};--dx:${Math.cos(ang) * dist}px;--dy:${Math.sin(ang) * dist - 30}px;--r:${Math.random() * 360}deg`;
+    document.body.appendChild(d); setTimeout(() => d.remove(), 900);
+  }
+}
+document.addEventListener('pointerdown', e => {
+  const t = e.target.closest('.btn, .hero-links > *, .card.link, .seg button, .post, .vote-opt, .top-actions > *');
+  if (!t || t.disabled || calm.matches) return;
+  const r = t.getBoundingClientRect(), size = Math.max(r.width, r.height) * 2;
+  const w = document.createElement('span'); w.className = 'ripple';
+  w.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
+  if (getComputedStyle(t).position === 'static') t.style.position = 'relative';
+  t.style.overflow = 'hidden'; t.appendChild(w); setTimeout(() => w.remove(), 600);
+});
+document.addEventListener('change', e => { if (e.target.matches('input[type=checkbox], input[type=radio]')) buzz(6); });
+const segPrev = {};
+const counted = new Map();
+function polish() {
+  view.querySelectorAll('.list').forEach(l => [...l.children].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 8))));
+  view.querySelectorAll('.seg').forEach((sg, k) => {
+    const bs = [...sg.querySelectorAll('button')], i = bs.findIndex(b => b.getAttribute('aria-selected') === 'true');
+    const key = (location.hash || '#home') + k; sg.style.setProperty('--n', bs.length);
+    const from = segPrev[key] ?? i; sg.style.setProperty('--i', from); sg.classList.add('has-ind');
+    requestAnimationFrame(() => requestAnimationFrame(() => sg.style.setProperty('--i', i))); segPrev[key] = i;
+  });
+  if (calm.matches) return;
+  view.querySelectorAll('.settle dd, .dep td.money b').forEach((el, k) => {
+    if (el.querySelector('input')) return;
+    const to = Number(el.textContent.replace(/[^0-9]/g, '')); if (!el.textContent.includes('원')) return;
+    const key = (location.hash || '') + k, from = counted.get(key) ?? to; counted.set(key, to);
+    if (from === to) return;
+    const t0 = performance.now(), dur = 420;
+    const step = (t) => { const q = Math.min(1, (t - t0) / dur), v = Math.round(from + (to - from) * (1 - (1 - q) ** 3)); el.textContent = won(v); if (q < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  });
+}
+new MutationObserver(() => { clearTimeout(polish.t); polish.t = setTimeout(polish, 0); }).observe(view, { childList: true, subtree: true });
 window.addEventListener('hashchange', route);
 
 (async () => {
