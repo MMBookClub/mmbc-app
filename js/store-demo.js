@@ -70,6 +70,8 @@ export const demoStore = {
   async signOut() { sessionUserId = null; safeSet(SESSION_KEY, ''); },
   async resetDemo() { mem = seed(); save(); sessionUserId = null; safeSet(SESSION_KEY, ''); },
 
+  async savePush() { },
+  async deletePush() { },
   async listGatherings() {
     const d = load();
     return d.gatherings.map(g => {

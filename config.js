@@ -4,6 +4,9 @@ window.MMBC_CONFIG = {
   supabaseUrl: 'https://mszhfnjrzljaqzotjeag.supabase.co',
   supabaseAnonKey: 'sb_publishable_VEbmkXxXHuqY2LIdNRh33A_oPbll6TO',
 
+  // 푸시 알림 공개 키 (비밀 키는 Vercel 환경 변수에만 있어요)
+  vapidPublicKey: 'BFZP7Abuslc2w5rjgDdpcwaPh4etqzEhSY4US5F_6fCl1-kEEijyDW7fngILSCQHielevQVBOg6tY-bwLjp0AEw',
+
   // 홈 화면 링크 (비워두면 "준비중"으로 표시)
   links: {
     instagram: 'https://www.instagram.com/m.m.bookclub/',

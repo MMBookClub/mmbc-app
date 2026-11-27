@@ -43,6 +43,11 @@ export function makeSupabaseStore(cfg) {
     },
     async signOut() { await sb.auth.signOut(); },
 
+    async savePush(sub) {
+      const j = sub.toJSON();
+      ok(await sb.rpc('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth }));
+    },
+    async deletePush(endpoint) { ok(await sb.rpc('delete_push_subscription', { p_endpoint: endpoint })); },
     async listGatherings() { return ok(await sb.rpc('list_gatherings')); },
     async createGathering(data) {
       const leader_id = await uidNow();

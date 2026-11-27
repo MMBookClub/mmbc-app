@@ -83,6 +83,49 @@ async function shrinkImage(file, max = 640) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+/* ── 푸시 알림 ── */
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+async function pushReg() { try { return await navigator.serviceWorker.getRegistration(); } catch { return null; } }
+async function pushState() {
+  if (!CFG.vapidPublicKey) return 'unsupported';
+  if (isIOS && !isStandalone()) return 'ios-install';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  const reg = await pushReg(); const sub = reg && await reg.pushManager.getSubscription().catch(() => null);
+  return sub && Notification.permission === 'granted' ? 'on' : 'off';
+}
+function b64ToBytes(b64) { const p = '='.repeat((4 - b64.length % 4) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)); }
+async function enablePush() {
+  if (store.mode === 'demo') return toast('체험판에서는 알림이 실제로 오지 않아요');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('알림 권한이 허용되지 않았어요');
+  const reg = await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
+  await store.savePush(sub); toast('알림을 켰어요');
+}
+async function disablePush() {
+  const reg = await pushReg(); const sub = reg && await reg.pushManager.getSubscription();
+  if (sub) { await store.deletePush(sub.endpoint).catch(() => { }); await sub.unsubscribe(); }
+  toast('알림을 껐어요');
+}
+async function disablePushQuiet() { try { const reg = await pushReg(); const sub = reg && await reg.pushManager.getSubscription(); if (sub) { await store.deletePush(sub.endpoint).catch(() => { }); await sub.unsubscribe(); } } catch { } }
+async function syncPush() { // 로그인한 사람과 이 기기의 알림을 연결
+  try { if (!me || Notification.permission !== 'granted') return; const reg = await pushReg(); const sub = reg && await reg.pushManager.getSubscription(); if (sub) await store.savePush(sub); } catch { }
+}
+async function pushBox(el) {
+  if (!el || !me) return;
+  const st = await pushState();
+  const msg = {
+    off: `<b>모임 알림 받기</b><p class="small" style="margin:4px 0 10px">새 모임이 열릴 때, 모임장 승인, 모임 3일 전과 하루 전에 알려드려요.</p><button class="btn sm accent" id="pushOn">알림 켜기</button>`,
+    'ios-install': `<b>아이폰에서 알림을 받으려면</b><p class="small" style="margin:4px 0 0">Safari 아래쪽 <b>공유 버튼</b> → <b>홈 화면에 추가</b>를 누른 뒤, 홈 화면의 MMBC 앱을 열고 여기서 알림을 켜 주세요.</p>`,
+    denied: `<b>알림이 차단되어 있어요</b><p class="small" style="margin:4px 0 0">휴대폰 설정 → 알림(또는 브라우저 사이트 설정)에서 이 사이트의 알림을 허용해 주세요.</p>`,
+  }[st];
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="box" style="margin:12px 16px 0">${msg}</div>`;
+  $('#pushOn', el)?.addEventListener('click', e => act(e.currentTarget, async () => { await enablePush(); pushBox(el); }));
+}
+
 /* ── 모임 상태 ── */
 const lastDate = (g) => new Date(g.s2_at || g.s1_at);
 const isEnded = (g) => g.status === 'closed' || lastDate(g) < new Date(Date.now() - 6 * 3600e3);
@@ -137,8 +180,15 @@ function renderTop() {
   $('#loginBtn', t)?.addEventListener('click', openLogin);
   $('#meBtn', t)?.addEventListener('click', () => openModal(`<h2>${esc(me.nickname)}님</h2>
     <p style="margin:0" class="muted">등급: ${roleName(me.role)}${me.industry ? ` · ${esc(me.industry)}` : ''}</p>
+    <div id="pushRow"></div>
     <div class="sheet-actions"><button class="btn ghost" data-close>닫기</button><button class="btn" id="out">로그아웃</button></div>`,
-    sh => $('#out', sh).addEventListener('click', async () => { await store.signOut(); me = null; closeModal(); toast('로그아웃했어요'); route(); })));
+    async sh => {
+      $('#out', sh).addEventListener('click', async () => { await disablePushQuiet(); await store.signOut(); me = null; closeModal(); toast('로그아웃했어요'); route(); });
+      const st = await pushState(), row = $('#pushRow', sh);
+      if (st === 'on') { row.innerHTML = `<button class="btn ghost block" id="pushOff">이 기기 알림 끄기</button>`; $('#pushOff', sh).onclick = e => act(e.currentTarget, async () => { await disablePush(); closeModal(); }); }
+      else if (st === 'off') { row.innerHTML = `<button class="btn accent block" id="pushOn2">이 기기에서 모임 알림 켜기</button>`; $('#pushOn2', sh).onclick = e => act(e.currentTarget, async () => { await enablePush(); closeModal(); }); }
+      else pushBox(row);
+    }));
   const bar = $('#demoBar');
   if (store.mode === 'demo') {
     bar.hidden = false;
@@ -160,7 +210,7 @@ function openLogin() {
     <div class="sheet-actions"><button type="button" class="btn ghost" id="toSignup">회원가입</button><button class="btn">로그인</button></div></form>${demo}`,
     sh => {
       const f = $('#lf', sh);
-      const doLogin = async (n, p) => { try { me = await store.signIn(n, p); closeModal(); toast(`${me.nickname}님 반가워요`); route(); } catch (e) { $('#lerr', sh).textContent = e.message; } };
+      const doLogin = async (n, p) => { try { me = await store.signIn(n, p); syncPush(); closeModal(); toast(`${me.nickname}님 반가워요`); route(); } catch (e) { $('#lerr', sh).textContent = e.message; } };
       f.addEventListener('submit', e => { e.preventDefault(); doLogin(f.nickname.value.trim(), f.password.value); });
       $('#toSignup', sh).addEventListener('click', () => { closeModal(); go('signup'); });
       sh.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => doLogin(b.dataset.demo, 'demo1234')));
@@ -348,10 +398,11 @@ function viewMy() {
   const hosted = gatherings.filter(g => g.leader_id === me.id);
   const sortL = (a) => a.sort((x, y) => (isEnded(x) - isEnded(y)) || x.s1_at.localeCompare(y.s1_at));
   const list = myTab === 'joined' ? sortL(joined) : sortL(hosted);
-  view.innerHTML = `<div class="pad" style="padding-bottom:0"><h1>내 모임</h1></div>
+  view.innerHTML = `<div class="pad" style="padding-bottom:0"><h1>내 모임</h1></div><div id="pushBox"></div>
     <div class="seg" role="tablist"><button role="tab" aria-selected="${myTab === 'joined'}" data-mt="joined">참여하기 (${joined.length})</button><button role="tab" aria-selected="${myTab === 'hosted'}" data-mt="hosted">모집하기 (${hosted.length})</button></div>
     ${list.length ? `<div class="list">${list.map(g => card(g, { button: false })).join('')}</div>` : `<p class="empty">${myTab === 'joined' ? '참여 신청한 모임이 없어요. 홈에서 모임을 골라보세요.' : '내가 모집한 모임이 없어요.'}</p>`}`;
   view.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { myTab = b.dataset.mt; viewMy(); }));
+  pushBox($('#pushBox'));
   bindCards(view);
 }
 
@@ -611,7 +662,7 @@ async function route() { if (!$('#modal').hidden) closeModal(); await refresh().
 window.addEventListener('hashchange', route);
 
 (async () => {
-  try { await store.init(); me = await store.me(); } catch (e) { toast(e.message); }
+  try { await store.init(); me = await store.me(); syncPush(); } catch (e) { toast(e.message); }
   await route();
   if ('serviceWorker' in navigator && location.protocol === 'https:') { try { navigator.serviceWorker.register('sw.js').catch(() => { }); } catch { } }
 })();

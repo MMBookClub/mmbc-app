@@ -1,0 +1,10 @@
+{
+  "name": "mmbc-app",
+  "private": true,
+  "type": "module",
+  "description": "모닝머니북클럽 앱. 화면은 정적 파일, 알림은 api/ 폴더의 Vercel 함수",
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "web-push": "3.6.7"
+  }
+}
